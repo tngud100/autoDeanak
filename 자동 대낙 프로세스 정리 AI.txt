@@ -1,0 +1,130 @@
+1. 실행 요청 (run 요청)
+
+0. 전역 변수 설정
+
+is_running 전역 변수를 True로 설정합니다.
+1. 메인 컴퓨터 설정
+
+현재 서버를 실행하는 컴퓨터의 IP를 remotePC 테이블의 6번 메인 컴퓨터에 할당하고, state를 'running'으로 업데이트합니다.
+2. 작업 반복
+
+is_running이 True인 동안 다음 작업을 반복합니다.
+2-1. 데이터베이스 새로고침
+
+데이터베이스를 새로고침하여 최신 상태로 유지합니다.
+2-2. 대기 중인 서비스 큐 가져오기
+
+service_queue 테이블에서 state가 0인 데이터를 우선순위와 시간 순으로 가져옵니다.
+2-3. 진행 중인 10분 접속 서비스 처리
+
+service_queue 테이블에서 state가 2인 데이터를 가져옵니다.
+2-3-1. 해당 데이터가 있을 경우 worker_id로 pc_num을 가져오고, queue_id와 pc_num으로 timer 테이블의 데이터를 가져옵니다.
+2-3-2. 팀 선택 화면을 템플릿으로 설정합니다.
+2-3-3. timer 테이블의 데이터가 없을 경우 3번으로 넘어갑니다.
+2-3-4. timer 테이블의 start_time과 현재 시간을 비교하여 10분이 지났을 경우 pc_num을 이용해 runOpenRemote() 함수를 실행하여 원격 접속을 시작합니다.
+2-3-5. 화면 캡처를 반복하며 팀 선택 화면 템플릿이 감지될 때까지 대기합니다.
+2-3-6. 게임 종료 후 3초 뒤 원격 화면을 종료합니다.
+2-3-7. timer 테이블에서 해당 queue_id와 pc_num에 해당하는 레코드의 end_time을 현재 시간으로 업데이트하고, state를 1로 변경합니다.
+2-3-8. remotePC 테이블에서 해당 pc_num의 state를 'idle'로 변경합니다.
+2-3-9. service_queue 테이블에서 process를 '완료'로, state를 1로 업데이트합니다.
+2-3-10. service_queue 테이블에서 end_time을 현재 시간으로 업데이트합니다.
+
+3. 대기 중인 서비스 큐가 없을 경우
+3. 2-2에서 가져온 데이터가 없을 경우 10초간 대기(time.sleep(10))한 후 2번으로 돌아갑니다.
+3-1. 대기 중인 서비스 큐가 있을 경우
+3-1. service_queue의 worker_id로 remotePC 테이블의 데이터를 가져오고, deanak_id로 deanak 테이블의 데이터를 가져옵니다.
+3-2. 데이터를 성공적으로 가져왔을 경우, 해당 remotePC의 state를 'running'으로 변경하고, ip를 deanak 테이블의 ip로 설정한 후 데이터베이스를 저장합니다.
+3-3. asyncio.create_task를 사용하여 auto_deanak 함수를 비동기 태스크로 생성하고, 해당 함수에 service_queue 데이터를 전달합니다.
+4. 자동 대낙 처리 (auto_deanak 함수)
+
+4. service_queue의 worker_id로 remotePC를 검색하고, state가 'running'인지 확인합니다.
+4-1. deanak 테이블과 remotePC 테이블의 데이터를 가져와 info 객체를 생성합니다.
+정보 포함 내용:
+service: deanak.service
+password: deanak.deanak_pw2
+topClass: deanak.topclass
+pc_num: deanak.pc_num
+deanak_id: service_queue.deanak_id
+worker_id: service_queue.worker_id
+queue_id: service_queue.id
+4-2. pc_num을 이용해 runOpenRemote() 함수를 실행합니다.
+4-3. main 함수를 실행합니다.
+main 함수 작업 흐름
+
+주요 화면 단계:
+대기 화면 ➔ 2차 비밀번호 입력 ➔ 공지사항 ➔ 팀 선택 ➔ 메인 화면 ➔ 이적시장 ➔ 상세 이적시장 ➔ 판매 리스트 ➔ 모두 받기 ➔ 완료
+10분 접속의 경우:
+대기 화면 ➔ 2차 비밀번호 입력 ➔ 10분 대기 ➔ 완료
+
+5. 템플릿 설정
+5. 템플릿의 경로를 저장합니다.
+5-1. 모든 템플릿이 잘 로드되었는지 확인합니다.
+5-2. 서비스 리스트(service_list)에 ['일반대낙', '10분접속']을 할당하고, 비밀번호 리스트(password_list)에 info.password를 추가합니다. 나머지 info 데이터도 받아옵니다.
+5-3. 화면 제어 변수 객체(detection_states)를 생성합니다.
+초기 상태:
+"anyKey_passed": False
+"password_passed": False
+"notice_passed": False
+"team_select_passed": False
+"main_screen_passed": False
+"market_screen_passed": False
+"get_item_screen_passed": False
+"finish_get_all_item": False
+5-4. 화면 크기를 변수에 등록하고, getWindowsWithTitle을 사용하여 이전에 열었던 창을 활성화합니다.
+
+6. 메인 루프 실행
+6. while 문을 사용하여 다음 작업을 반복합니다.
+6-1. 화면 캡처
+화면을 캡처하여 현재 상태를 파악합니다.
+6-2. AnyKey 화면 처리
+6-2. detection_states['anyKey_passed']가 False인 경우 Esc 키를 반복적으로 눌러줍니다.
+6-2-1. 비밀번호 화면이 감지되면 detection_states['anyKey_passed']를 True로 설정하고, service_queue 테이블의 process를 '2차 비밀번호'로 업데이트하고 start_time에 현재 시간을 기록합니다. 이후 루프의 처음으로 돌아갑니다.
+6-3. 비밀번호 입력 처리
+6-3. anyKey_passed가 True이고 password_passed가 False인 경우:
+비밀번호 화면이 감지되면 해당 영역을 ROI로 설정하고, 비밀번호 템플릿을 사용하여 비밀번호를 입력합니다.
+6-3-1. 비밀번호 확인 버튼을 감지하여 클릭합니다.
+6-3-2. 즉시 스크린샷을 찍고, 비밀번호 확인 실패 여부를 판단합니다.
+6-3-3. 잘못된 비밀번호가 감지되면 게임을 종료하고 원격 화면을 꺼줍니다.
+6-3-4. 성공했으면 detection_states['password_passed']를 True로 설정하고, service_queue 테이블의 process를 '공지사항'으로 업데이트합니다. 이후 루프의 처음으로 돌아갑니다.
+6-4. 공지사항 처리
+6-4. password_passed가 True이고 notice_passed가 False인 경우:
+공지사항 화면을 감지하면 Esc 키를 눌러 닫고, detection_states['notice_passed']를 True로 설정합니다.
+service_queue 테이블의 process를 '팀선택'으로 업데이트합니다. 이후 루프의 처음으로 돌아갑니다.
+6-5. 서비스에 따른 분기 처리
+6-5. notice_passed가 True이고 team_select_passed가 False인 경우:
+서비스가 '10분접속'이면:
+service_queue 테이블의 process를 '10분접속'으로 업데이트하고, state를 2로 변경합니다.
+timer 테이블에 해당 정보를 삽입하고, 게임을 종료하지 않고 원격 화면을 종료한 후 루프를 빠져나옵니다.
+서비스가 '일반대낙'이면:
+팀 선택 화면을 감지하여 처리합니다.
+6-6-4. detection_states['team_select_passed']를 True로 설정하고, service_queue 테이블의 process를 '메인 화면'으로 업데이트합니다. 이후 루프의 처음으로 돌아갑니다.
+6-7. 메인 화면 처리
+6-7. team_select_passed가 True이고 main_screen_passed가 False인 경우:
+메인 화면을 감지하면 이적시장 버튼을 클릭하고, detection_states['main_screen_passed']를 True로 설정합니다.
+service_queue 테이블의 process를 '이적시장'으로 업데이트합니다. 이후 루프의 처음으로 돌아갑니다.
+6-8. 이적시장 처리
+6-8. main_screen_passed가 True이고 market_screen_passed가 False인 경우:
+이적시장 화면을 감지하면 리스트 버튼을 클릭하고, detection_states['market_screen_passed']를 True로 설정합니다.
+service_queue 테이블의 process를 '상세 이적 시장'으로 업데이트합니다. 이후 루프의 처음으로 돌아갑니다.
+6-9. 판매 리스트 처리
+6-9. market_screen_passed가 True이고 get_item_screen_passed가 False인 경우:
+판매 리스트 화면을 감지하면 아이템 받기 버튼을 클릭하고, detection_states['get_item_screen_passed']를 True로 설정합니다.
+service_queue 테이블의 process를 '판매 리스트'로 업데이트합니다. 이후 루프의 처음으로 돌아갑니다.
+6-10. 아이템 모두 받기 처리
+6-10. get_item_screen_passed가 True이고 finish_get_all_item이 False인 경우:
+아이템 모두 받기 화면을 감지하면 해당 버튼을 클릭하고, detection_states['finish_get_all_item']를 True로 설정합니다.
+service_queue 테이블의 process를 '아이템 모두 받기'로 업데이트합니다. 이후 루프의 처음으로 돌아갑니다.
+6-11. 완료 처리
+6-11. finish_get_all_item이 True인 경우:
+service_queue 테이블의 process를 '완료'로 업데이트하고, state를 1로 변경하며, end_time을 현재 시간으로 설정합니다.
+게임을 종료하고, remotePC 테이블에서 해당 pc_num의 state를 'idle'로 변경합니다.
+원격 화면을 종료하고 루프를 빠져나옵니다.
+이후 1초간 대기한 후 is_running 상태를 확인하여 True이면 작업을 반복합니다.
+
+2. 중지 요청 (stop 요청)
+0. 전역 변수 설정
+is_running 전역 변수를 False로 설정합니다.
+1. 메인 컴퓨터 상태 업데이트
+remotePC 테이블의 6번 메인 컴퓨터의 state를 'stopped'로 업데이트합니다.
+2. 실행 중인 태스크 처리
+running_tasks를 확인하여 실행 중인 태스크가 있으면 해당 태스크가 완료될 때까지 기다립니다.

@@ -1,0 +1,91 @@
+run 요청
+0. global변수인 is_running을 True로 설정한다.
+1. 현재 서버를 실행하는 컴퓨터 ip를 remotePC테이블의 6번 main컴퓨터에 할당하고 state를 running으로 전환 => remotePC table update ip, state({ip, 'running'})
+2. global변수인 is_running이 True일때 아래의 작업을 반복
+2-1. db를 새로고침
+2-2. service_queue테이블에서 state가 0인 데이터를 가져온다(priority가 높은 순서대로 만약 같을 시 시간 순으로)
+
+2-3. service_queue테이블에서 state가 2인 데이터를 가져온다
+2-3-1. 만약 있을 시 worker_id으로 pc_num을 가져온다, queue_id와 pc_num으로 timer테이블을 가져온다
+2-3-2. 팀선택 화면을 템플릿으로 설정
+2-3-3. timer테이블이 없을시 3번으로 넘어간다
+2-3-4. timer테이블의 시작시간과 현재시간을 계산하여 10분접속이 완료 되었을 시 pc_num을 이용해 runOpenRemote()를 실행한다(remote를 켜주는 함수)
+2-3-5. while문을 이용해 화면을 캡처와 캡쳐된 화면에서 팀선택 화면 템플릿을 감지할때까지 반복시킨다
+2-3-6. 게임 종료 후 3초 뒤 remote화면을 꺼준다
+2-3-7. timer테이블에서 queue_id와 pc_num이 같을시에 end_time에 현재시간과 state를 1로 바꿔준다
+2-3-8. remotePC테이블에서 pc_num의 state를 'idle'로 바꿔준다
+2-3-9. service_queue테이블에서 process와 state를 '완료', 1로 업데이트 시켜준다
+2-3-10. service_queue테이블에서 end_time을 현재 시간으로 바꿔준다.
+
+3. 만약 2-2의 데이터가 없을 시에 10초 time.sleep을 줘서 2번으로 돌아가게 한다
+3-1. 만약 2-2의 데이터가 있을 시에 service_queue테이블의 worker_id를 통해 remotePC테이블을 가져오고 service_queue테이블의 deanak_id를 통해 deanak테이블의 데이터를 가져온다
+3-2. remotePC테이블과 deanak테이블을 성공적으로 가져왔을 시에 가져온 remotePC의 state를 'running'으로 바꿔주고 remotePC의 ip는 deanak테이블의 ip를 가져오고 db를 저장한다.
+3-3. 이후 asyncio.create_task를 통해 4번의 auto_deanak함수를 running_task로 만들어고 해당 함수에 service_queue데이터를 넘긴다.
+
+4. service_queue_의 worker_id를 가져와 remotePC를 검색하고 state가 'running'일시 deanak테이블과 remotePC테이블 데이터를 가져온다.
+4-1. info라는 객체를 만들어 main함수를 실행하기 위한 변수들을 넣는다.
+4-1-info. {service:deanak.service, password:deanak_pw2, topClass:deanak.topclass, pc_num: deanak.pc_num, deanak_id: service_queue.deanak_id, worker_id: service_queue.worker_id, queue_id: service_queue.id}
+4-2. pc_num을 이용해 runOpenRemote()를 실행한다.
+4-3. main 함수를 실행한다
+
+main
+대낙 => 대기, 2차비밀번호, 공지사항, 팀선택, 메인화면, 이적시장, 상세 이적시장, 판매 리스트, 모두 받기, 완료
+10분접속 => 대기, 2차비밀번호, 10분 대기, 완료
+5. template의 경로를 저장 시킨다.
+5-template_paths. {password_screen, password_templates[0~9], password_confirm, wrong_password, notice_screen, team_select_screen, team_select_text, main_screen, market_btn, market_screen, list_btn,get_item_screen, get_item_btn, get_all_screen, get_all_btn, top_class, no_top_class}
+5-1. 모든 템플릿이 잘 로드가 되었는지 확인한다.
+5-2. service_list에 ['일반대낙', '10분접속']을 할당하고 password_list에 4-1의 info.password를 집어넣고 나머지 4-1-info데이터도 받아온다.
+5-3. detection_states라는 화면 제어 변수 객체를 생성한다
+5-3-detection_states
+{
+            "anyKey_passed": False,
+            "password_passed": False,
+            "notice_passed": False,
+            "team_select_passed": False,
+            "main_screen_passed": False,
+            "market_screen_passed": False,
+            "get_item_screen_passed": False,
+            "finish_get_all_item": False
+}
+5-4. screen의 size를 변수에 등록하고 getWindowsWithTitle을 이용하여 아까 4-2번에서 열었던 창을 active시킨다
+
+6. while문을 이용해 아래의 작업을 계속 반복한다.
+6-1. 화면을 캡쳐한다.
+6-2. detection_states의 anykey_passed가 True가 아닐 시 esc를 반복하여 눌러준다
+6-2-1. password Screen이 감지되었을 시 detection_states의 anykey_passed를 True로 만들어주고 service_queue테이블에 process를 '대기'에서 '2차 비밀번호'로 만들어주고 start_time에 현재 시각을 넣어준다 이후 continue를 통해 6번으로 돌아간다.
+
+6-3. anykey_passed가 True이고 password_passed가 False일때 password Screen이 감지되었을때 해당 부분을 roi로 만들어주고 for문을 통해 password_templates리스트를 반복하며 비밀번호와 일치하는 idx가 되었을때 해당 template과 화면을 감지하고 클릭하게 한다
+6-3-1. password Screen을 감지한 부분을 roi로 만들어주고 password_confirm을 감지한다면 클릭하게 한다.
+6-3-2. 곧바로 스크린샷을 찍고 password_confirm을 감지를 했다면 password Screen을 roi로 만들고 wrong_password를 다시 한번 감지하게 한다
+6-3-3. wrong_password를 감지했다면 게임을 종료하게 하고 remote화면을 꺼준다
+6-3-4. wrong_password를 감지하지 못했다면 detection_states의 password_passed를 True로 만들어주고 service_queue테이블의 process를 '2차 비밀번호'에서 '공지사항'으로 바꿔준다. 이후 continue를 통해 6번으로 되돌아간다.
+
+6-4. detection_state의 notice_passed
+6-6. detection_states의 team_select_passed가 False이며 detection_states의 notice_passed가  True일 때 service가 service_list[0](즉, 일반대낙)이면 team_select_screen을 탐지하게 한다.
+6-6-1. team_select_screen을 탐지 했다면 클릭해야될 부분이 계속해서 UI가 바껴서 절대 바뀌지 않는 team_select_text를 감지하게 한다.
+6-6-2. 만약 탐지 했다면 탐지 위치값을 return받아 text의 높이값을 구한 뒤 해당 값의 6배를 높여 클릭해야될 부분을 offset_y로 지정한다
+6-6-3. team_select_text값에서 offset_y만큼 y축 위치값을 더해 해당 위치를 클릭하게 한다.
+6-6-4. detection_states의 team_select_passed를 True로 바꿔주고 service_queue테이블의 process를 '메인 화면'으로 바꿔준다 이후 continue를 통해 6번으로 돌아가게 한다
+
+6-7. detection_states의 main_screen_passed가 False이며 team_select_passed가 True일 때 main_screen을 감지하게 한다.
+6-7-1. 감지가 되었으면 market_btn을 감지하게 하고 해당 위치를 클릭하게 한다.
+6-7-2. detection_states의 main_screen_passed를 True로 바꿔주고 service_queue테이블의 process를 '이적시장'으로 바꿔준다. 이후 continue를 통해 6번으로 돌아가게 한다.
+
+6-8. detection_states의 market_screen_passed가 False이며 main_screen_passed가 True일 때 market_screen을 감지하게 하며 감지가 됐다면 list_btn을 감지하게 하고 클릭하게 하며 detection_states의 market_screen_passed를 True로 바꾼다.
+6-8-1. service_queue테이블의 process를 '상세 이적 시장'으로 바꿔주고 continue를 통해 6번으로 돌아간다.
+
+6-9. detection_states의 get_item_screen_passed가 False이며 market_screen_passed가 True일 때 get_item_screen을 감지하게 하며 감지가 됐다면 get_item_btn을 감지하게 하고 클릭하게 하며 detection_states의 get_item_screen_passed를 True로 바꾼다.
+6-9-1. service_queue테이블의 process를 '판매 리스트'로 바꿔주고 continue를 통해 6번으로 돌아간다.
+
+6-10. detection_states의 finish_get_all_item이 False이며 get_item_screen_passed가 True일 때 get_all_screen을 감지하게 하며 감지가 됐다면 get_all_btn을 감지하게 하고 클릭하게 하며 detection_states의 finish_get_all_item를 True로 바꾼다.
+6-10-1. service_queue테이블의 process를 '아이템 모두 받기'로 바꿔주고 continue를 통해 6번으로 돌아간다.
+
+6-11. finish_get_all_item이 True라면 service_queue테이블의 process를 '완료'라고 바꿔주고 state를 '1'로, end_time을 현재시각으로 업데이트한다.
+6-11-1. 게임을 종료하고 remotePC테이블에서 pc_num이 info에서 받아 온 pc_num과 같을 시에 state를 'idle'로 바꿔준다.
+6-11-2. remote화면을 나가고 break를 통해 6번의 while문을 종료시킨다.
+6-11-3. 이후 time.sleep을 1초 설정하고 2번의 is_running을 모니터링하여 True일시에 계속 이 작업을 반복한다.
+
+stop요청
+0. global 변수인 is_running을 False로 설정한다.
+1. remotePC테이블의 6번 컴퓨터인 main컴퓨터의 state를 stopped로 업데이트한다.
+2. running_tasks를 확인 하여 'task'작업을 done()을 리턴값을 통해 값이 False라면 running_tasks['task]에 await를 할당하여 작업이 끝마칠 때까지 기다린다.

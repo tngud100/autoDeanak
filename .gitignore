@@ -1,0 +1,10 @@
+build/
+dist/
+logs/
+.idea/
+__pycache__/
+
+docker-compose.yml
+Dockerfile
+exec.bat
+FlaskApp.iml
