@@ -5,6 +5,6 @@ from dependencies import Base
 class WorkerPC(Base):
     __tablename__ = "remote_worker_pc"
 
-    pc_num = Column(Integer, primary_key=True, index=True)
+    pc_num = Column(Integer, primary_key=True)
     worker_id = Column(String(45), primary_key=True, index=True)
-    service = Column(String(45), index=True)
+    service = Column(String(45))

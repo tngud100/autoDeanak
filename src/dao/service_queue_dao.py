@@ -4,25 +4,28 @@ from sqlalchemy import update
 from src.entity.autoDeanak_entity import Deanak
 from src.entity.remote_pcs_entity import RemotePC
 from src.entity.service_queue_entity import serviceQueue
+from src import state as __state__
 
 class serviceQueueDao:
     @staticmethod
-    async def find_service_queue_by_state_and_service(db: AsyncSession, state: int, service: str, ip: str):
+    async def find_service_queue_by_state_and_service(db: AsyncSession, state: int):
         # 비동기 쿼리 수행
         result = await db.execute(
             select(serviceQueue).filter(serviceQueue.state == state).order_by(serviceQueue.priority, serviceQueue.apply_time)
         )
         result_list = list(result.scalars())
+        server_id = await __state__.unique_id().read_unique_id()
 
         for queue in result_list:
+            # 대낙 번호가 같은 queue테이블 데이터 조회(같은 서비스인지 확인)
             deanak = await db.execute(select(Deanak).filter(Deanak.id == queue.deanak_id))
-            if deanak.scalars().first().service != service:
+            if deanak.scalars().first() is None:
                 continue
             
-            worker_id = await db.execute(select(RemotePC.worker_id).filter(RemotePC.ip == ip).filter(RemotePC.worker_id == queue.worker_id))
-            if worker_id:
+            # 해당 큐의 worker_id를 통해 RemotePC 테이블에서 server_id 조회
+            queue_server_id = await db.execute(select(RemotePC.server_id).filter(RemotePC.worker_id == queue.worker_id))
+            if queue_server_id.scalars().first() == server_id:
                 return queue
-            else: None
 
     @staticmethod
     async def find_service_queue_by_state(db: AsyncSession, state: int):

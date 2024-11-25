@@ -7,11 +7,12 @@ import time
 from pywinauto import Desktop
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src import state
 from src.entity.remote_pcs_entity import RemotePC
 from src.dao.remote_pcs_dao import remoteDao
 from src.dao.deanak_dao import deanakDao
 from src.entity.service_queue_entity import serviceQueue
-from src.service.logic.utils.keyboard_mouse import exit_main_loop
+# from src.service.logic.utils.keyboard_mouse import exit_main_loop
 
 
 # 방향키 이동 함수
@@ -58,15 +59,13 @@ async def initialize_and_move(num):
     
 async def check_running_PC(db: AsyncSession, service_queue_data: serviceQueue):
     worker_id = service_queue_data.worker_id
-    pcs_data = await remoteDao.find_remote_pc_by_worker_id(db, worker_id)
+    pcs_data = await remoteDao.find_remote_pc_process_by_worker_id(db, worker_id)
     deanak_data = await deanakDao.find_deanak_data(db, service_queue_data.deanak_id)
-    if pcs_data is None:
-        return None
-    
-    if pcs_data.state == 'working':
+
+    if pcs_data == 'working':
         return deanak_data
-    else:
-        await exit_main_loop(deanak_data.service)
+    # else:
+    #     await exit_main_loop(deanak_data.service)
 
     
 async def select_remote(num):
@@ -95,9 +94,12 @@ async def runOpenRemote(pc_num: int):
         logging.error(f"Failed to activate window: {e}")
         return {"error": str(e)}
 
-async def delete_remote_pc(db: AsyncSession):
-   # 현재 IP 가져오기 (httpx 사용)
-    async with httpx.AsyncClient() as client:
-        response = await client.get("https://checkip.amazonaws.com/")
-    current_ip = response.text.strip()  # IP 응답에서 공백 제거
-    await remoteDao.delete_remote_pc_by_ip(db, current_ip)
+async def stop_remote_pc(db: AsyncSession, service: str):
+    server_id = state.unique_id().read_unique_id()
+    # remote_pcs의request를 stop_deanak으로 바꾸고 process를 error로 바꾼다.
+    if service is "일반대낙":
+        await remoteDao.update_tasks_request(db, server_id, 'stop_deanak')
+    if service is "10분접속":
+        await remoteDao.update_tasks_request(db, server_id, 'stop_ten_min')
+
+    await remoteDao.update_remote_pc_process_by_server_id(db, server_id, 'error_stop')

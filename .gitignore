@@ -2,6 +2,7 @@ build/
 dist/
 logs/
 .idea/
+unique_id.json
 __pycache__/
 
 docker-compose.yml

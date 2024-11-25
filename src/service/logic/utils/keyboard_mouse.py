@@ -6,12 +6,12 @@ from dependencies import get_db_context
 from src import state
 from src.service.remote import openRemote
 
-async def move_cursor(x, y):
+def move_cursor(x, y):
     """마우스를 (x, y) 좌표로 이동합니다."""
     # win32api.SetCursorPos((int(x), int(y)))
     pyautogui.moveTo(x, y)
 
-async def move_and_click(x, y):
+def move_and_click(x, y):
     """마우스를 (x, y) 좌표로 이동한 뒤 클릭합니다."""
     # move_cursor(x, y)
     # win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0)
@@ -47,13 +47,11 @@ async def exit_main_loop(service):
     # press_exit_key()
     if service == state.deanak_service:
         state.main_loop = False
-        state.deanak_is_running = False
     if service == state.ten_min_service:
         state.ten_min_loop = False
-        state.ten_min_is_running = False
         
     async with get_db_context() as db:
-        await openRemote.delete_remote_pc(db)
+        await openRemote.delete_remote_pc(db, service)
 
     await asyncio.sleep(1)
     # press_tilde_key()

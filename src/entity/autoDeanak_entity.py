@@ -6,9 +6,9 @@ class Deanak(Base):
     __tablename__ = "deanak"
 
     id = Column(Integer, primary_key=True, index=True)
-    service = Column(String(45), index=True)
-    game_id = Column(String(45), index=True)
-    pw2 = Column(String(10), index=True)
-    topclass = Column(Integer, index=True)
-    worker_id = Column(String(45), index=True)
-    state = Column(Integer, index=True)
+    service = Column(String(45))
+    game_id = Column(String(45))
+    pw2 = Column(String(10))
+    topclass = Column(Integer)
+    worker_id = Column(String(45))
+    state = Column(Integer)

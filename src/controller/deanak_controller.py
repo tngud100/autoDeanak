@@ -5,7 +5,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 from fastapi import APIRouter, Depends
-from dependencies import get_db, get_db_context
+from dependencies import get_db, get_db_context, AsyncSessionLocal
 
 from src.dao.remote_pcs_dao import remoteDao, remoteWorkerPCDao
 from src.service.ten_min import ten_min
@@ -24,44 +24,77 @@ router = APIRouter(
     tags=["auto_deanak"]
 )
 
+async def do_task(task: str):
+    if task == "deanak_start":
+      await run_deanak()  
+    elif task == "ten_min_start":
+      await run_ten_min()
+    elif task == "deanak_stop":
+      await stop_deanak()
+    elif task == "ten_min_stop":
+      await stop_ten_min()
+    elif task == "None":
+      pass
 
-@router.get("/deanak/run")
-async def run_deanak(db: AsyncSession = Depends(get_db)) -> JSONResponse:
-    async with state.lock:
+# @router.get("/deanak/run")
+async def run_deanak():
+    async with AsyncSessionLocal() as db:
+      async with state.lock:
+        server_id = await state.unique_id().read_unique_id()
+        print("check",server_id)
+
         if state.deanak_is_running:
-            return JSONResponse(status_code=400, content={"message": "Deanak is already running"})
+          await remoteDao.update_tasks_request(db, server_id, "None")
+          return logging.warning("Deanak is already running")
+          # return JSONResponse(status_code=400, content={"message": "Deanak is already running"})
         state.deanak_is_running = True
-
-    # 현재 IP 가져오기 (httpx 사용)
-    async with httpx.AsyncClient() as client:
+      
+      # 현재 IP 가져오기 (httpx 사용)
+      async with httpx.AsyncClient() as client:
         response = await client.get("https://checkip.amazonaws.com/")
-    current_ip = response.text.strip()  # IP 응답에서 공백 제거
+      current_ip = response.text.strip()  # IP 응답에서 공백 제거
 
-    await remoteDao.insert_remote_pc(db, 'idle', current_ip)
+      await remoteDao.insert_remote_pc_ip(db, server_id, 'idle', current_ip)
 
-    # auto deanak 프로세스 시작
-    state.deanak_running_task = asyncio.create_task(run_auto_deanak(current_ip))
+      # auto deanak 프로세스 시작
+      state.deanak_running_task = asyncio.create_task(run_auto_deanak(current_ip))
+      await remoteDao.update_tasks_request(db, server_id, "None")
+    # return JSONResponse(status_code=200, content={"message": "Deanak started"})
 
-    return JSONResponse(status_code=200, content={"message": "Deanak started"})
+# @router.get("/deanak/stop")
+async def stop_deanak():
+    async with AsyncSessionLocal() as db:
+      async with state.lock:
+        server_id = await state.unique_id().read_unique_id()
 
-@router.get("/deanak/stop")
-async def stop_deanak(db: AsyncSession = Depends(get_db)) -> JSONResponse:
-    async with state.lock:
         if not state.deanak_is_running:
-            return JSONResponse(status_code=400, content={"message": "Deanak is not running"})
+          await remoteDao.update_tasks_request(db, server_id, "None")
+          return logging.warning("Deanak is already stopped")
+            # return JSONResponse(status_code=400, content={"message": "Deanak is not running"})
         state.deanak_is_running = False
 
-    # 실행 중인 작업을 대기하거나 취소
-    if state.deanak_running_task and not state.deanak_running_task.done():
-        state.deanak_running_task.cancel()
-        # ip가져와서 remote_PC 컬럼 삭제
-        await openRemote.delete_remote_pc(db)
-        try:
-            await state.deanak_running_task
-        except asyncio.CancelledError:
-            logging.info("Running task was cancelled.")
+      await remoteDao.update_tasks_request(db, server_id, "None")
+      await db.close()  # 명시적으로 세션 닫기
 
-    return JSONResponse(status_code=200, content={"message": "Deanak stopped"})
+    if state.deanak_running_task:
+      state.deanak_running_task.cancel()
+      try:
+          await state.deanak_running_task
+      except asyncio.CancelledError:
+          logging.info("Running task was cancelled.")
+
+      
+    # 실행 중인 작업을 대기하거나 취소
+    # if state.deanak_running_task and not state.deanak_running_task.done():
+    #     state.deanak_running_task.cancel()
+    #     # ip가져와서 remote_PC 컬럼 삭제
+    #     await openRemote.delete_remote_pc(db)
+    #     try:
+    #         await state.deanak_running_task
+    #     except asyncio.CancelledError:
+    #         logging.info("Running task was cancelled.")
+
+    # return JSONResponse(status_code=200, content={"message": "Deanak stopped"})
 
 @router.get("/ten_min/run")
 async def run_ten_min(db: AsyncSession = Depends(get_db)) -> JSONResponse:
@@ -109,11 +142,11 @@ async def run_auto_deanak(ip: str):
       async with get_db_context() as db:
         remote_pcs = await remoteDao.find_remote_pc_worker_id_by_ip(db, ip, state.deanak_service)
         if not remote_pcs:
-          logging.info("server needs child PCs")
+          logging.info("cannot find remote PCs with worker_id")
           await asyncio.sleep(10)
           continue
 
-        get_queue = await serviceQueueDao.find_service_queue_by_state_and_service(db, 0, state.deanak_service, ip)
+        get_queue = await serviceQueueDao.find_service_queue_by_state_and_service(db, 0)
         if get_queue:
           logging.info("Deanak data found")
           await set_data_form.set_remote_pcs(db, get_queue)
@@ -145,7 +178,7 @@ async def run_auto_ten_min(ip: str):
           await asyncio.sleep(10)
           continue
 
-        get_queue = await serviceQueueDao.find_service_queue_by_state_and_service(db, 0, state.ten_min_service, ip)
+        get_queue = await serviceQueueDao.find_service_queue_by_state_and_service(db, 0)
         if get_queue:
             logging.info("10min_queue data found")
             await set_data_form.set_remote_pcs(db, get_queue)

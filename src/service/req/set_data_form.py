@@ -16,10 +16,10 @@ async def set_remote_pcs(db: Session, service_queue_data: serviceQueue):
     # remote_pcs에 deanak_form의 worker_id을 넣어주고 state를 running으로 update
     await db.execute(
         update(RemotePC)
-        .where(RemotePC.state == 'idle')
+        .where(RemotePC.process == 'idle')
         .where(RemotePC.ip.isnot(None))
         .where(RemotePC.worker_id == service_queue_data.worker_id)
-        .values({'state': 'working'})
+        .values({'process': 'working'})
     )
     await db.commit()
 

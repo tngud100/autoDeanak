@@ -48,7 +48,7 @@ async def check_pass_10min_service(db: AsyncSession, queue_id: int, worker_id: s
         if time_diff > 60:  # 실제 운영 시 600으로 설정
             await exit_game(db, timer_data.pc_num, template)
             await tenMinTimerDao.update_end_time_and_state(db, queue_id, pc_num, now_time, 1)
-            await remoteDao.update_remote_pc_state_by_worker_id(db, worker_id, 'idle')
+            await remoteDao.update_remote_pc_process_by_worker_id(db, worker_id, 'idle')
             return True
         else:
             return False

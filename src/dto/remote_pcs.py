@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from sqlalchemy import Index
 
 # 데이터베이스 모델 정의 (deanak 테이블)
 class RemoteResponse(BaseModel):

@@ -106,4 +106,4 @@ async def deanak(info: dict):
         await serviceQueueDao.error_update(db, deanak_id, worker_id, type(e).__name__)
         await exit_main_loop(service)
     finally:
-        await remoteDao.update_remote_pc_state_by_worker_id(db, worker_id, 'idle')
+        await remoteDao.update_remote_pc_process_by_worker_id(db, worker_id, 'idle')

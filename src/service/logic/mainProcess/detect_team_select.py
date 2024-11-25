@@ -24,7 +24,7 @@ async def detect_team_select_for_10min(db, detection_states, detection_count, de
       await serviceQueueDao.update_queue_process(db, deanak_id, worker_id, '10분 접속')
       await serviceQueueDao.update_queue_state(db, deanak_id, worker_id, 2)
       await tenMinTimerDao.insert_timer(db, queue_id, pc_num)
-      await remoteDao.update_remote_pc_state_by_worker_id(db, worker_id, 'idle')
+      await remoteDao.update_remote_pc_process_by_worker_id(db, worker_id, 'idle')
       await press_tilde_key()  # `
       return detection_states, detection_count
     except Exception as e:

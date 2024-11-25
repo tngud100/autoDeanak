@@ -7,32 +7,65 @@ from src.entity.worker_pc_entity import WorkerPC
 
 class remoteDao:
     @staticmethod
-    async def insert_remote_pc(db: AsyncSession, state: str, ip: str = None):
-        # 비동기 쿼리 작성
-        remote_data = {"state": state, "ip": ip}
-        new_data = RemotePC(**remote_data)
-
+    async def insert_remote_pc_server_id(db: AsyncSession, server_id: str):
+        new_data = RemotePC(server_id=server_id, request='None')
         db.add(new_data)
         await db.commit()
-
+        
     @staticmethod
-    async def delete_remote_pc_by_ip(db: AsyncSession, ip: str):
+    async def delete_remote_pc_by_server_id(db: AsyncSession, server_id: str):
         # 비동기 쿼리 작성
         await db.execute(
             delete(RemotePC)
-            .where(RemotePC.ip == ip)
+            .where(RemotePC.server_id == server_id)
         )
         await db.commit()
 
     @staticmethod
-    async def join_remote_pc_by_ip(db: AsyncSession, ip: str, worker_id: str):
+    async def choose_remote_pc_service(db: AsyncSession, server_id: str, service: str):
+        await db.execute(
+            update(RemotePC)
+            .where(RemotePC.server_id == server_id)
+            .values(service=service)
+        )
+        await db.commit()
+
+    @staticmethod
+    async def get_pending_tasks(db: AsyncSession, server_id: str):
+        result = await db.execute(
+            select(RemotePC.request)
+            .filter(RemotePC.server_id == server_id)
+        )
+        return result.scalars().first()
+
+    @staticmethod
+    async def update_tasks_request(db: AsyncSession, server_id: str, request: str):
+        await db.execute(
+            update(RemotePC)
+            .where(RemotePC.server_id == server_id)
+            .values(request=request)
+        )
+        await db.commit()
+
+    @staticmethod
+    async def update_remote_pc_process_by_server_id(db: AsyncSession, server_id: str, process: str):
+        # 비동기 쿼리 작성
+        await db.execute(
+            update(RemotePC)
+            .where(RemotePC.server_id == server_id)
+            .values(process=process)
+        )
+        await db.commit()    
+
+    @staticmethod
+    async def join_remote_pc_by_server_id(db: AsyncSession, server_id: str, worker_id: str):
         # 비동기 쿼리 작성
         service = await remoteWorkerPCDao.find_worker_serive_by_worker_id(db, worker_id)
 
         if service == '일반대낙':
             await db.execute(
                 update(RemotePC)
-                .where(RemotePC.ip == ip, RemotePC.worker_id.is_(None))
+                .where(RemotePC.server_id == server_id, RemotePC.worker_id.is_(None))
                 .values(worker_id=worker_id)
             )
             await db.commit()
@@ -42,7 +75,7 @@ class remoteDao:
         if service == '10분접속':
             blank_remote_row = await db.execute(
                 select(RemotePC)
-                .where(RemotePC.ip == ip, RemotePC.worker_id.is_(None))
+                .where(RemotePC.server_id == server_id, RemotePC.worker_id.is_(None))
                 .limit(1)
             )
             row_to_update = blank_remote_row.scalar_one_or_none()
@@ -57,8 +90,25 @@ class remoteDao:
                 return True
             
             return False
-            
-
+        
+    
+    @staticmethod
+    async def insert_remote_pc_ip(db: AsyncSession, server_id: str, process: str, ip: str = None):
+        await db.execute(
+            update(RemotePC)
+            .where(RemotePC.server_id == server_id)
+            .values(ip=ip, process=process)
+        )
+        
+        await db.commit()
+        
+    @staticmethod
+    async def find_service_by_server_id(db: AsyncSession, server_id: str):
+        result = await db.execute(
+            select(RemotePC.service)
+            .filter(RemotePC.server_id == server_id)
+        )
+        return result.scalar_one_or_none()
 
     @staticmethod
     async def find_remote_pc_list(db: AsyncSession):
@@ -80,10 +130,10 @@ class remoteDao:
             return result.scalars().all()
 
     @staticmethod
-    async def find_remote_pc_by_worker_id(db: AsyncSession, worker_id: str):
+    async def find_remote_pc_process_by_worker_id(db: AsyncSession, worker_id: str):
         # 비동기 데이터 조회
         result = await db.execute(
-            select(RemotePC).filter(RemotePC.worker_id == worker_id)
+            select(RemotePC.process).filter(RemotePC.worker_id == worker_id)
         )
         return result.scalars().first()
     
@@ -96,12 +146,12 @@ class remoteDao:
         return result.scalars().first()
     
     @staticmethod
-    async def update_remote_pc_state_by_worker_id(db: AsyncSession, worker_id: str, state: str):
+    async def update_remote_pc_process_by_worker_id(db: AsyncSession, worker_id: str, process: str):
         # 비동기 쿼리 작성
         await db.execute(
             update(RemotePC)
             .where(RemotePC.worker_id == worker_id)
-            .values(state=state)
+            .values(process=process)
         )
         await db.commit()
 
@@ -129,6 +179,7 @@ class remoteWorkerPCDao:
             select(WorkerPC.pc_num).filter(WorkerPC.worker_id == worker_id)
         )
         return result.scalars().first()
+    
     @staticmethod
     async def find_worker_serive_by_worker_id(db: AsyncSession, worker_id: str):
         # 비동기 데이터 조회
