@@ -34,4 +34,3 @@ async def get_db_context():
             yield session
         finally:
             await session.close()
-

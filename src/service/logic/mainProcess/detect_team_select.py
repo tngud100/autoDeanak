@@ -19,7 +19,7 @@ async def detect_team_select_for_10min(db, detection_states, detection_count, de
       detection_count["team_select"] += 1
       if detection_count["team_select"] > 20:
           raise NoDetectionError("10분 접속 서비스 중 팀 선택 화면이 20회 이상 탐지되지 않았습니다.")
-      asyncio.sleep(1)
+      await asyncio.sleep(1)
       detection_states["team_select_passed"] = True
       await serviceQueueDao.update_queue_process(db, deanak_id, worker_id, '10분 접속')
       await serviceQueueDao.update_queue_state(db, deanak_id, worker_id, 2)
@@ -51,7 +51,7 @@ async def team_select_detection(db, detection_states, detection_count, screen, t
         detection_count["team_select_text"] += 1
         if detection_count["team_select_text"] > 20:
           raise NoDetectionError("팀 선택 텍스트가 20회 이상 탐지되지 않았습니다.")
-        if detect_and_click_template(screen, templates["team_select_text"], 0.8, ratio_width, ratio_height, "teamSelectBtn", mouse_offset=(0, offset_y)):
+        if detect_and_click_template(screen, templates["team_select_text"], 0.8, ratio_width, ratio_height, mouse_offset=(0, offset_y)):
           detection_states["team_select_passed"] = True
           await serviceQueueDao.update_queue_process(db, deanak_id, worker_id, '메인화면')
           return detection_states, detection_count

@@ -6,7 +6,7 @@ class RemotePC(Base):
     __tablename__ = "remote_pcs"
 
     idx = Column(Integer, primary_key=True, index=True)
-    server_id = Column(String(100), unique=True, index=True)
+    server_id = Column(String(100), index=True)
     ip = Column(String(45))
     request = Column(String(45), index=True)
     service = Column(String(45))

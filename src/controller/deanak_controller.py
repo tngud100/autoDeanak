@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from dependencies import get_db, get_db_context, AsyncSessionLocal
 
 from src.dao.remote_pcs_dao import remoteDao, remoteWorkerPCDao
+from src.service.otp import check_otp_number
 from src.service.ten_min import ten_min
 from src.service.logic.utils.finish_10_min_service import check_pass_10min
 from src.dao.deanak_dao import deanakDao
@@ -24,7 +25,7 @@ router = APIRouter(
     tags=["auto_deanak"]
 )
 
-async def do_task(task: str):
+async def do_task(task: str, worker_id: str = None):
     if task == "deanak_start":
       await run_deanak()  
     elif task == "ten_min_start":
@@ -33,6 +34,8 @@ async def do_task(task: str):
       await stop_deanak()
     elif task == "ten_min_stop":
       await stop_ten_min()
+    elif task == "otp_check":
+      await check_otp_number(worker_id)
     elif task == "None":
       pass
 
@@ -41,7 +44,6 @@ async def run_deanak():
     async with AsyncSessionLocal() as db:
       async with state.lock:
         server_id = await state.unique_id().read_unique_id()
-        print("check",server_id)
 
         if state.deanak_is_running:
           await remoteDao.update_tasks_request(db, server_id, "None")
@@ -96,45 +98,57 @@ async def stop_deanak():
 
     # return JSONResponse(status_code=200, content={"message": "Deanak stopped"})
 
-@router.get("/ten_min/run")
-async def run_ten_min(db: AsyncSession = Depends(get_db)) -> JSONResponse:
-    async with state.lock:
+# @router.get("/ten_min/run")
+async def run_ten_min() -> JSONResponse:
+    async with AsyncSessionLocal() as db:
+      async with state.lock:
+        server_id = await state.unique_id().read_unique_id()
         if state.ten_min_is_running:
-            return JSONResponse(status_code=400, content={"message": "ten_min is already running"})
+          await remoteDao.update_tasks_request(db, server_id, "None")
+          return logging.warning("ten_min is already running")
+            # return JSONResponse(status_code=400, content={"message": "ten_min is already running"})
         state.ten_min_is_running = True
 
-    # 현재 IP 가져오기 (httpx 사용)
-    async with httpx.AsyncClient() as client:
-        response = await client.get("https://checkip.amazonaws.com/")
-    current_ip = response.text.strip()  # IP 응답에서 공백 제거
+      # 현재 IP 가져오기 (httpx 사용)
+      async with httpx.AsyncClient() as client:
+          response = await client.get("https://checkip.amazonaws.com/")
+      current_ip = response.text.strip()  # IP 응답에서 공백 제거
 
-    for i in range(0,5):
-      await remoteDao.insert_remote_pc(db, 'idle', current_ip)
+      for i in range(0,5):
+        await remoteDao.insert_remote_pc_ip(db, server_id, 'idle', current_ip)
 
-    # auto deanak 프로세스 시작
-    state.ten_min_running_task = asyncio.create_task(run_auto_ten_min(current_ip))
+      # auto deanak 프로세스 시작
+      state.ten_min_running_task = asyncio.create_task(run_auto_ten_min(current_ip))
+      await remoteDao.update_tasks_request(db, server_id, "None")
 
-    return JSONResponse(status_code=200, content={"message": "ten_min started"})
+      # return JSONResponse(status_code=200, content={"message": "ten_min started"})
 
-@router.get("/ten_min/stop")
-async def stop_ten_min(db: AsyncSession = Depends(get_db)) -> JSONResponse:
-    async with state.lock:
+# @router.get("/ten_min/stop")
+async def stop_ten_min() -> JSONResponse:
+    async with AsyncSessionLocal() as db:
+      async with state.lock:
+        server_id = await state.unique_id().read_unique_id()
+
         if not state.ten_min_is_running:
-            return JSONResponse(status_code=400, content={"message": "ten_min is not running"})
+          await remoteDao.update_tasks_request(db, server_id, "None")
+          return logging.warning("ten_min is already stopped")
+            # return JSONResponse(status_code=400, content={"message": "ten_min is not running"})
         state.ten_min_is_running = False
 
+      await remoteDao.update_tasks_request(db, server_id, "None")
+      await db.close()  # 명시적으로 세션 닫기
 
-    # 실행 중인 작업을 대기하거나 취소
-    if state.ten_min_running_task and not state.ten_min_running_task.done():
-        state.ten_min_running_task.cancel()
-        # ip가져와서 remote_PC 컬럼 삭제
-        await openRemote.delete_remote_pc(db)
-        try:
+      # 실행 중인 작업을 대기하거나 취소
+      if state.ten_min_running_task and not state.ten_min_running_task.done():
+          state.ten_min_running_task.cancel()
+          try:
             await state.ten_min_running_task
-        except asyncio.CancelledError:
+          except asyncio.CancelledError:
+            # ip가져와서 remote_PC 컬럼 삭제
+            await remoteDao.update_remote_pc_process_by_server_id(db, server_id, 'error_stop')
             logging.info("Running task was cancelled.")
 
-    return JSONResponse(status_code=200, content={"message": "ten_min stopped"})
+      # return JSONResponse(status_code=200, content={"message": "ten_min stopped"})
 
 async def run_auto_deanak(ip: str):
   try:
@@ -142,7 +156,7 @@ async def run_auto_deanak(ip: str):
       async with get_db_context() as db:
         remote_pcs = await remoteDao.find_remote_pc_worker_id_by_ip(db, ip, state.deanak_service)
         if not remote_pcs:
-          logging.info("cannot find remote PCs with worker_id")
+          logging.info("you didn't select service or enroll worker_id and ip in remote_pcs db table")
           await asyncio.sleep(10)
           continue
 
@@ -172,9 +186,9 @@ async def run_auto_ten_min(ip: str):
       async with get_db_context() as db:
         await check_pass_10min(db)
 
-        remote_pcs = await remoteDao.find_remote_pc_worker_id_by_ip(db, ip, state.deanak_service)
+        remote_pcs = await remoteDao.find_remote_pc_worker_id_by_ip(db, ip, state.ten_min_service)
         if not remote_pcs:
-          logging.info("server needs child PCs")
+          logging.info("you didn't select service or enroll worker_id and ip in remote_pcs db table")
           await asyncio.sleep(10)
           continue
 

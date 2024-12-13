@@ -13,3 +13,6 @@ class WrongPasswordError(Exception):
 class unactivatedRemoteError(Exception): 
   """원격프로그램의 비활성화된 창에서 발생하는 예외"""
 
+class SkipPurchaseException(Exception): 
+  """구매 화면을 스킵하는 예외"""
+

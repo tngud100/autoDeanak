@@ -51,7 +51,7 @@ async def exit_main_loop(service):
         state.ten_min_loop = False
         
     async with get_db_context() as db:
-        await openRemote.delete_remote_pc(db, service)
+        await openRemote.stop_remote_pc(db, service)
 
     await asyncio.sleep(1)
     # press_tilde_key()

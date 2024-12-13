@@ -1,15 +1,23 @@
 # image_processing.py
 
+import os
+from typing import Counter
 import cv2
 import numpy as np
 # import os
 import time
+import cv2
+import numpy as np
+import pytesseract
+import pyautogui
+import easyocr
+
 from src.service.logic.utils.utils import preprocess_image, get_random_point
 from src.service.logic.utils.keyboard_mouse import move_cursor, move_and_click
 from src.service.logic.utils.error import handle_error
 
 # 템플릿 이미지 로드 함수
-def load_templates(password_list):
+def load_templates(password_list: list = None):
     try:
         template_paths = {
             "password_screen": 'static/image/2ndPassword.PNG',
@@ -18,8 +26,8 @@ def load_templates(password_list):
             "notice_screen": 'static/image/notice.PNG',
             "team_select_screen": 'static/image/selectTeam.PNG',
             "team_select_text": 'static/image/selectTeamText.PNG',
-            # "purchase_before_main_screen": 'static/image/beforeMainPurchases.PNG',
-            # "purchase_cancel_btn": 'static/image/purchaseCloseBtn.PNG',
+            "purchase_before_main_screen": 'static/image/beforeMainPurchases.PNG',
+            "purchase_cancel_btn": 'static/image/purchaseCloseBtn.PNG',
             "main_screen": 'static/image/mainScreen.PNG',
             "market_screen": 'static/image/marketScreen.PNG',
             "get_item_screen": 'static/image/getItemScreen.PNG',
@@ -71,11 +79,21 @@ def check_and_load_template(path, use_color=False):
     
     return template
 
+def check_and_load_text_template(path):
+    template = cv2.imread(path, cv2.IMREAD_GRAYSCALE)  # 기존 방식 (흑백)
+    
+    if template is None:
+        raise FileNotFoundError(f"찾지 못 한 템플릿 이미지: {path}")
+    
+    return template
+
+
+
 
 # 화면 탐지 및 작업 처리 함수
-def handle_detection(screen, template, action, *args, threshold=0.8, roi=None, use_color=False):
+def handle_detection(screen, template, action, *args, threshold=0.8, roi=None):
     try:
-        top_left, bottom_right, _ = detect_template(screen, template, threshold, roi=roi, use_color=use_color)
+        top_left, bottom_right, _ = detect_template(screen, template, threshold, roi=roi)
         if top_left and bottom_right:
             action(*args)
             return True
@@ -85,118 +103,72 @@ def handle_detection(screen, template, action, *args, threshold=0.8, roi=None, u
         return False
 
     
-def detect_template(screen, template, threshold=0.8, template_name=None, edge_image=False, roi=None, use_color=False):
-    """화면에서 템플릿을 탐지하고, 템플릿의 좌표와 일치도를 반환합니다. 컬러 매칭 옵션 추가."""
+def detect_template(screen, templates, threshold=0.8, roi=None):
+    """화면에서 템플릿을 탐지하고, 템플릿의 좌표와 일치도를 반환합니다."""
     if roi is not None:
         # ROI가 설정된 경우, 해당 영역만 탐지 대상으로 자름
         screen = screen[roi[1]:roi[3], roi[0]:roi[2]]
 
-    # 에지 이미지로 변환
-    if edge_image:
-        screen = preprocess_image(screen)
-        template = preprocess_image(template)
-        # 에지 검출로 특징 강화
-        screen_edges = cv2.Canny(screen, 50, 150)
-        template_edges = cv2.Canny(template, 50, 150)
-    else:
-        screen_edges = screen
-        template_edges = template
-
-    template_height, template_width = template.shape[:2]
+    template_height, template_width = templates.shape[:2]
     found = None
 
-    # 컬러 매칭용 채널별 분리
-    if use_color:
-        screen_rgb = cv2.cvtColor(screen, cv2.COLOR_BGR2RGB)
-        template_rgb = cv2.cvtColor(template, cv2.COLOR_BGR2RGB)
-        
-        screen_channels = cv2.split(screen_rgb)
-        template_channels = cv2.split(template_rgb)
+    # templates가 단일 이미지인 경우 리스트로 변환
+    if not isinstance(templates, list):
+        templates = [templates]
 
-    # 다중 스케일 템플릿 매칭을 위한 루프
-    for scale in np.linspace(0.8, 1.0, 10)[::-1]:  # 스케일 범위와 단계 수 조정
-        resized_template_width = int(template_width * scale)
-        resized_template_height = int(template_height * scale)
+    # 템플릿 리스트를 순차적으로 탐지 시도
+    for template in templates:
+        template_height, template_width = template.shape[:2]
+        found = None
 
-        # 템플릿 크기 조정
-        if edge_image:
-            resized = cv2.resize(template_edges, (resized_template_width, resized_template_height))
-        else:
-            if use_color:
-                resized = [cv2.resize(chan, (resized_template_width, resized_template_height)) for chan in template_channels]
-            else:
-                resized = cv2.resize(template, (resized_template_width, resized_template_height))
+        # 다중 스케일 템플릿 매칭을 위한 루프
+        for scale in np.linspace(0.8, 1.0, 10)[::-1]:  # 스케일 범위와 단계 수 조정
+            resized_template_width = int(template_width * scale)
+            resized_template_height = int(template_height * scale)
 
-        r = template_width / float(resized[0].shape[1] if use_color else resized.shape[1])  # 비율 계산
+            resized = cv2.resize(template, (resized_template_width, resized_template_height))
 
-        # 템플릿 크기가 화면을 초과하면 무시
-        if (resized[0].shape[0] if use_color else resized.shape[0]) > screen.shape[0] or \
-           (resized[0].shape[1] if use_color else resized.shape[1]) > screen.shape[1]:
-            continue
+            r = template_width / float(resized.shape[1])  # 비율 계산
 
-        # 컬러 매칭 실행
-        if use_color:
-            # 각 채널별로 매칭 결과를 얻어서 평균
-            results = []
-            for screen_chan, template_chan in zip(screen_channels, resized):
-                result = cv2.matchTemplate(screen_chan, template_chan, cv2.TM_CCOEFF_NORMED)
-                results.append(result)
-            # 채널별 매칭 결과 평균
-            result = np.mean(results, axis=0)
-        else:
-            if edge_image:
-                result = cv2.matchTemplate(screen_edges, resized, cv2.TM_CCOEFF_NORMED)
-            else:
-                result = cv2.matchTemplate(screen, resized, cv2.TM_CCOEFF_NORMED)
+            # 템플릿 크기가 화면을 초과하면 무시
+            if resized.shape[0] > screen.shape[0] or resized.shape[1] > screen.shape[1]:
+                continue
 
-        _, max_val, _, max_loc = cv2.minMaxLoc(result)
-        # print(f"Scale: {scale}, Max val: {max_val}, Max loc: {max_loc}")
+            result = cv2.matchTemplate(screen, resized, cv2.TM_CCOEFF_NORMED)
 
-        if max_val >= threshold:
-            if found is None or max_val > found[0]:
-                found = (max_val, max_loc, r, resized[0].shape[1] if use_color else resized.shape[1], 
-                         resized[0].shape[0] if use_color else resized.shape[0])
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
-    # 템플릿 위치 반환
-    if found:
-        max_val, max_loc, r, resized_width, resized_height = found
-        start_x = int(max_loc[0] * r)
-        start_y = int(max_loc[1] * r)
-        end_x = start_x + int(resized_width * r)
-        end_y = start_y + int(resized_height * r)
+            if max_val >= threshold:
+                if found is None or max_val > found[0]:
+                    found = (max_val, max_loc, r, resized.shape[1], resized.shape[0])
 
-        # ROI가 설정된 경우, 전체 화면의 좌표로 변환
-        if roi is not None:
-            start_x += roi[0]
-            start_y += roi[1]
-            end_x += roi[0]
-            end_y += roi[1]
+        # 템플릿 위치 반환 (탐지에 성공한 경우)
+        if found:
+            max_val, max_loc, r, resized_width, resized_height = found
+            start_x = int(max_loc[0] * r)
+            start_y = int(max_loc[1] * r)
+            end_x = start_x + int(resized_width * r)
+            end_y = start_y + int(resized_height * r)
 
-        # # 탐지된 영역에 대해서만 이미지 색상 변환
-        # if len(screen.shape) == 2:  # 그레이스케일 이미지인 경우
-        #     screen_color = cv2.cvtColor(screen, cv2.COLOR_GRAY2BGR)
-        # else:
-        #     screen_color = screen  # 이미 컬러 이미지인 경우
+            # ROI가 설정된 경우, 전체 화면의 좌표로 변환
+            if roi is not None:
+                start_x += roi[0]
+                start_y += roi[1]
+                end_x += roi[0]
+                end_y += roi[1]
 
-        # 탐지된 영역에 사각형 그리기
-        # cv2.rectangle(screen_color, (start_x, start_y), (end_x, end_y), (0, 255, 0), 2)
+            return (start_x, start_y), (end_x, end_y), max_val
 
-        # 스크린샷 저장
-        # timestamp = time.strftime("%Y%m%d-%H%M%S")
-        # result_path = os.path.join('capture', f"{template_name}_{timestamp}.png")
-        # cv2.imwrite(result_path, screen_color)
-        # print(f"Captured image saved at: {result_path}")
-
-        return (start_x, start_y), (end_x, end_y), max_val
-
+    # 모든 템플릿을 탐지했으나 성공하지 못한 경우
     return None, None, None
 
-def detect_and_click_template(screen, template, threshold, ratio_width, ratio_height, template_name, roi=None, click=True, mouse_offset=(0, 0), edge_image=False, shrink_factor=0.9):
+def detect_and_click_template(screen, template, threshold, ratio_width, ratio_height, roi=None, click=True, mouse_offset=(0, 0), shrink_factor=0.9):
     """주어진 템플릿을 탐지하고 클릭 여부를 선택하며 탐지된 이미지를 저장합니다."""
     if roi is not None:  # ROI(탐지할 영역)가 설정된 경우 해당 영역만 탐지
         screen = screen[roi[1]:roi[3], roi[0]:roi[2]]  # ROI 영역으로 화면 자르기
 
-    top_left, bottom_right, max_val = detect_template(screen, template, threshold, template_name=template_name, edge_image=edge_image)
+    top_left, bottom_right, max_val = detect_template(screen, template, threshold)
+    print(f"second detecting image: {top_left}, {bottom_right}")
     if top_left and bottom_right:
         # 탐지된 영역을 사각형으로 표시
         # screen_color = cv2.cvtColor(screen, cv2.COLOR_GRAY2BGR)
@@ -239,3 +211,166 @@ def detect_and_click_template(screen, template, threshold, ratio_width, ratio_he
         time.sleep(0.5)
         return top_left, bottom_right
     return None, None
+
+# 이미지에서 텍스트 추출
+async def read_text_from_image(screen, template, threshold=0.8, roi=None):
+    """
+    이미지에서 텍스트를 추출하는 함수.
+
+    Parameters:
+    - screen: 입력 이미지
+    - template: 탐지할 템플릿 이미지
+    - threshold: 매칭 정확도의 임계값 (기본값 0.8)
+    - roi: 관심 영역 (좌측 상단 (x1, y1), 우측 하단 (x2, y2)) (기본값 None)
+
+    Returns:
+    - 추출된 텍스트
+    """
+    # ROI가 설정된 경우, 해당 영역만 탐지 대상으로 자름
+    if roi is not None:
+        screen = screen[roi[1]:roi[3], roi[0]:roi[2]]
+
+    template_height, template_width = template.shape[:2]
+    found = None
+
+    
+    # 다중 스케일 템플릿 매칭을 위한 루프
+    for scale in np.linspace(0.8, 1.0, 10)[::-1]:  # 스케일 범위와 단계 수 조정
+        resized_template_width = int(template_width * scale)
+        resized_template_height = int(template_height * scale)
+
+        resized = cv2.resize(template, (resized_template_width, resized_template_height))
+
+        # 템플릿 크기가 화면을 초과하면 무시
+        if resized.shape[0] > screen.shape[0] or resized.shape[1] > screen.shape[1]:
+            continue
+
+        result = cv2.matchTemplate(screen, resized, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+        if max_val >= threshold:
+            if found is None or max_val > found[0]:
+                found = (max_val, max_loc, resized.shape[1], resized.shape[0])
+    
+    # 템플릿 위치 반환 (탐지에 성공한 경우)
+    if found:
+        max_val, max_loc, resized_width, resized_height = found
+        start_x = max_loc[0]
+        start_y = max_loc[1]
+        end_x = start_x + resized_width
+        end_y = start_y + resized_height
+    
+        # 텍스트 추출을 위한 영역 자르기
+        detected_region = screen[start_y:end_y, start_x:end_x]
+
+        # EasyOCR 객체 생성
+        reader = easyocr.Reader(['en', 'ko'])  # 영어와 한글 지원
+
+        # 이미지를 OCR로 전달 (OpenCV 이미지 입력)
+        results = reader.readtext(detected_region)
+
+        for _, text, confidence in results:
+            if confidence > 0.8:  # 신뢰도 80% 이상
+                print(f"confidence: {confidence}")
+                print(f"High confidence text: {text}")
+                return text
+    
+    # 이미지 탐지 실패 시 None 반환
+    return None
+
+
+# Tesseract 실행 경로 설정 (Windows 사용자의 경우)
+# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+async def compare_text_and_click_image(screen, first_template, search_text, second_template, threshold=0.8, roi=None):
+    """
+    미리 설정한 범위 내에서 이미지를 탐지하고, 텍스트 또는 숫자가 일치하면 
+    두 번째 이미지를 탐지하고 클릭하는 함수.
+
+    Parameters:
+    - screen: 입력 이미지
+    - first_template: 첫 번째 탐지할 템플릿 이미지
+    - search_text: 찾고자 하는 텍스트 또는 숫자
+    - second_template: 텍스트 탐지 후 클릭해야 할 두 번째 템플릿 이미지
+    - threshold: 매칭 정확도의 임계값 (기본값 0.8)
+    - roi: 관심 영역 (좌측 상단 (x1, y1), 우측 하단 (x2, y2)) (기본값 None)
+
+    Returns:
+    - 클릭 성공 여부 (True/False)
+    """
+    # ROI가 설정된 경우, 해당 영역만 탐지 대상으로 자름
+    if roi is not None:
+        screen = screen[roi[1]:roi[3], roi[0]:roi[2]]
+
+    template_height, template_width = first_template.shape[:2]
+    found = None
+
+    # 다중 스케일 템플릿 매칭을 위한 루프
+    for scale in np.linspace(0.8, 1.0, 10)[::-1]:  # 스케일 범위와 단계 수 조정
+        resized_template_width = int(template_width * scale)
+        resized_template_height = int(template_height * scale)
+
+        resized = cv2.resize(first_template, (resized_template_width, resized_template_height))
+
+        # 템플릿 크기가 화면을 초과하면 무시
+        if resized.shape[0] > screen.shape[0] or resized.shape[1] > screen.shape[1]:
+            continue
+
+        result = cv2.matchTemplate(screen, resized, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        print(f"max_loc: {max_loc}, max_val: {max_val}")
+
+        if max_val >= threshold:
+            if found is None or max_val > found[0]:
+                found = (max_val, max_loc, resized.shape[1], resized.shape[0])
+    print(found)
+    # 첫 번째 템플릿 위치 반환 (탐지에 성공한 경우)
+    if found:
+        max_val, max_loc, resized_width, resized_height = found
+        start_x = max_loc[0]
+        start_y = max_loc[1]
+        end_x = start_x + resized_width
+        end_y = start_y + resized_height
+
+        # 텍스트 추출을 위한 영역 자르기
+        detected_region = screen[start_y:end_y, start_x:end_x]
+
+        # OCR을 사용하여 텍스트 추출
+        extracted_text = pytesseract.image_to_string(detected_region, lang='kor').strip()
+        print(f"Extracted text: {extracted_text}")
+
+        # 텍스트가 찾고자 하는 텍스트와 일치하는지 확인
+        if search_text in extracted_text:
+            # 두 번째 템플릿을 화면에서 탐지하고 클릭
+            second_template_height, second_template_width = second_template.shape[:2]
+            found = None
+
+            # 다중 스케일 템플릿 매칭
+            for scale in np.linspace(0.8, 1.0, 10)[::-1]:
+                resized_template_width = int(second_template_width * scale)
+                resized_template_height = int(second_template_height * scale)
+
+                resized = cv2.resize(second_template, (resized_template_width, resized_template_height))
+
+                if resized.shape[0] > screen.shape[0] or resized.shape[1] > screen.shape[1]:
+                    continue
+
+                result = cv2.matchTemplate(screen, resized, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+                if max_val >= threshold:
+                    if found is None or max_val > found[0]:
+                        found = (max_val, max_loc, resized.shape[1], resized.shape[0])
+
+            # 두 번째 템플릿 위치 반환 및 클릭 (탐지에 성공한 경우)
+            if found:
+                max_val, max_loc, resized_width, resized_height = found
+                click_x = max_loc[0] + resized_width // 2
+                click_y = max_loc[1] + resized_height // 2
+
+                # pyautogui를 사용해 클릭 수행
+                pyautogui.click(click_x, click_y)
+
+                return True
+
+    # 이미지 탐지와 클릭 실패 시 False 반환
+    return False

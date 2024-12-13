@@ -95,11 +95,12 @@ async def runOpenRemote(pc_num: int):
         return {"error": str(e)}
 
 async def stop_remote_pc(db: AsyncSession, service: str):
-    server_id = state.unique_id().read_unique_id()
+    server_id = await state.unique_id().read_unique_id()
     # remote_pcs의request를 stop_deanak으로 바꾸고 process를 error로 바꾼다.
-    if service is "일반대낙":
-        await remoteDao.update_tasks_request(db, server_id, 'stop_deanak')
-    if service is "10분접속":
-        await remoteDao.update_tasks_request(db, server_id, 'stop_ten_min')
-
     await remoteDao.update_remote_pc_process_by_server_id(db, server_id, 'error_stop')
+    
+    if service == "일반대낙":
+        await remoteDao.update_tasks_request(db, server_id, 'deanak_stop')
+    if service == "10분접속":
+        await remoteDao.update_tasks_request(db, server_id, 'ten_min_stop')
+        

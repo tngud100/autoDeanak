@@ -20,14 +20,14 @@ async def finish_get_all_item_detection(db, detection_states, detection_count, s
           top_left, bottom_right, _ = detect_template(screen, templates["arrange_btn_screen"], 0.8)
           if top_left and bottom_right:
             roi = top_left[0], top_left[1], bottom_right[0], bottom_right[1]
-            if handle_detection(screen, templates["arrange_btn_screen"], lambda: detect_and_click_template(screen, templates["arrange_btn"], 0.8, ratio_width, ratio_height, "priceArrangeBtn", roi=roi), roi=roi):
+            if handle_detection(screen, templates["arrange_btn_screen"], lambda: detect_and_click_template(screen, templates["arrange_btn"], 0.8, ratio_width, ratio_height, roi=roi), roi=roi):
                 await serviceQueueDao.update_queue_process(db, deanak_id, worker_id, '아이템 가격별 정렬 확인')
                 detection_states["arrange_btn_screen"] = True
         else:
           detection_count["get_all_btn"] += 1
           if detection_count["get_all_btn"] > 20:
             raise NoDetectionError("모두 받기 버튼이 20회 이상 탐지되지 않았습니다.")
-          if detect_and_click_template(screen, templates["get_all_btn"], 0.8, ratio_width, ratio_height, "getAllBtn"):
+          if detect_and_click_template(screen, templates["get_all_btn"], 0.8, ratio_width, ratio_height):
             detection_states["finish_get_all_item"] = True
             await serviceQueueDao.update_queue_process(db, deanak_id, worker_id, '아이템 모두 받기')
             time.sleep(1)

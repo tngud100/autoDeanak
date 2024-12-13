@@ -11,4 +11,5 @@ class Deanak(Base):
     pw2 = Column(String(10))
     topclass = Column(Integer)
     worker_id = Column(String(45))
+    otp = Column(String(45))
     state = Column(Integer)

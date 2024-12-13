@@ -46,8 +46,30 @@ class deanakDao:
     
     @staticmethod
     async def find_deanak_list(db: AsyncSession):
-         # 비동기 데이터 조회
+        # 비동기 데이터 조회
         result = await db.execute(
             select(Deanak)
         )
         return result.scalars().all()
+    
+    @staticmethod
+    async def update_otp_number(db: AsyncSession, deanak_id: str, otp_number: str):
+        # 비동기 데이터 업데이트
+        await db.execute(
+            update(Deanak)
+            .where(Deanak.id == deanak_id)
+            .values(otp=otp_number)
+        )
+        await db.commit()
+
+    @staticmethod
+    async def find_deanak_list_by_worker_id(db: AsyncSession, worker_id: str):
+        # 비동기 데이터 조회
+        result = await db.execute(
+            select(Deanak)
+            .filter(Deanak.worker_id == worker_id)
+            .filter(Deanak.state == 2)
+            .order_by(Deanak.id.asc())
+        )
+        return result.scalars().first()
+        

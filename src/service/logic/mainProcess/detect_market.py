@@ -11,14 +11,17 @@ async def market_detection(db, detection_states, detection_count, screen, ratio_
       detection_count["market_screen"] += 1
       if detection_count["market_screen"] > 20:
         raise NoDetectionError("이적 시장 화면이 20회 이상 탐지되지 않았습니다.")
+      
       if handle_detection(screen, templates["market_screen"], lambda: None):
         detection_count["list_btn"] += 1
         if detection_count["list_btn"] > 20:
           raise NoDetectionError("판매 선수 리스트 버튼이 20회 이상 탐지되지 않았습니다.")
-        if detect_and_click_template(screen, templates["list_btn"], 0.8, ratio_width, ratio_height, "listBtn"):
+        
+        if detect_and_click_template(screen, templates["list_btn"], 0.8, ratio_width, ratio_height):
           detection_states["market_screen_passed"] = True
           await serviceQueueDao.update_queue_process(db, deanak_id, worker_id, '상세 이적시장')
           return detection_states, detection_count
+        
     except NoDetectionError as e:
       handle_error(e, "이적 시장 화면에서 오류 발생", True)
       await serviceQueueDao.error_update(db, deanak_id, worker_id, type(e).__name__)

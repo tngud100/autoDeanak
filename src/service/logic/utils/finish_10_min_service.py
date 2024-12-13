@@ -63,8 +63,8 @@ async def exit_game(db: AsyncSession, pc_num: int, img_template):
         top_left, bottom_right, _ = detect_template(screen, img_template, 0.8)
 
         if top_left and bottom_right:
-            press_exit_key()
+            await press_exit_key()
             time.sleep(5)
-            press_tilde_key()
+            await press_tilde_key()
             done = True
         time.sleep(1)

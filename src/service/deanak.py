@@ -9,6 +9,7 @@ from dependencies import get_db_context
 from src.dao.deanak_dao import deanakDao
 from src.service.logic.mainProcess.detect_getItem_screen import get_item_detection
 from src.service.logic.mainProcess.detect_get_all import finish_get_all_item_detection
+from src.service.logic.mainProcess.detect_purchase import purchase_detection
 from src.service.logic.mainProcess.detect_main import main_detection
 from src.service.logic.mainProcess.detect_market import market_detection
 from src.service.logic.mainProcess.detect_notice import notice_detection
@@ -64,6 +65,9 @@ async def deanak(info: dict):
                     # 팀 선택 화면 탐지 및 처리
                     detection_states, detection_count = await team_select_detection(db, detection_states, detection_count, screen, templates, ratio_width, ratio_height, deanak_id, worker_id, service, service_list)
                     
+                    # 메인화면 이전 구매 화면 탐지 및 처리
+                    detection_states, detection_count = await purchase_detection(db, detection_states, detection_count, screen, ratio_width, ratio_height, templates, deanak_id, worker_id, service)
+
                     # 메인 화면 탐지 및 처리
                     detection_states, detection_count = await main_detection(db, detection_states, detection_count, screen, ratio_width, ratio_height, templates, deanak_id, worker_id, service)
 
@@ -90,7 +94,7 @@ async def deanak(info: dict):
                             await serviceQueueDao.error_update(db, deanak_id, worker_id, type(e).__name__)
                             await exit_main_loop(service)
 
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(4)
 
                 except Exception as e:
                     handle_error(e, "메인 함수의 루프문 내부에서 예상치 못한 오류 발생", True)

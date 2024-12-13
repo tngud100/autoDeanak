@@ -22,6 +22,44 @@ class remoteDao:
         await db.commit()
 
     @staticmethod
+    async def check_duplicate_worker_id(db: AsyncSession, server_id: str, worker_id: str):
+        result = await db.execute(
+            select(RemotePC.worker_id)
+            .filter(RemotePC.server_id == server_id)
+            .filter(RemotePC.worker_id == worker_id)
+        )
+        
+        if result.scalars().first() == None:
+            return False
+        
+        return True
+
+    @staticmethod
+    async def add_ten_min_client(db: AsyncSession, server_id: str):
+        result = await db.execute(
+            select(RemotePC).filter(RemotePC.server_id == server_id)
+        )
+        row_to_copy = result.scalars().first()  # 단일 행만 가져오기
+        
+        if not row_to_copy:
+            raise ValueError(f"No row found for server_id: {server_id}")
+
+        # 복사한 행 4개 생성
+        new_rows = []
+        for _ in range(4):
+            new_row = RemotePC(
+                server_id=row_to_copy.server_id,
+                # 나머지 필드를 기존 행에서 복사
+                request=row_to_copy.request
+                # 필요한 다른 필드 추가
+            )
+            new_rows.append(new_row)
+
+        # 데이터베이스에 추가
+        db.add_all(new_rows)
+        await db.commit()
+
+    @staticmethod
     async def choose_remote_pc_service(db: AsyncSession, server_id: str, service: str):
         await db.execute(
             update(RemotePC)
@@ -56,11 +94,22 @@ class remoteDao:
             .values(process=process)
         )
         await db.commit()    
+    
+    @staticmethod
+    async def find_worker_id_by_server_id(db: AsyncSession, server_id, worker_id):
+        result = await db.execute(
+            select(RemotePC.worker_id)
+            .filter(RemotePC.server_id == server_id)
+            .filter(RemotePC.worker_id == worker_id)
+        )
+        return result.scalars().all()
 
     @staticmethod
-    async def join_remote_pc_by_server_id(db: AsyncSession, server_id: str, worker_id: str):
+    async def join_remote_pc_by_server_id(db: AsyncSession, server_id: str, worker_id: str, server_service: str):
         # 비동기 쿼리 작성
-        service = await remoteWorkerPCDao.find_worker_serive_by_worker_id(db, worker_id)
+        service = await remoteWorkerPCDao.find_worker_service_by_worker_id(db, worker_id)
+        if server_service != service:
+            return False
 
         if service == '일반대낙':
             await db.execute(
@@ -76,9 +125,10 @@ class remoteDao:
             blank_remote_row = await db.execute(
                 select(RemotePC)
                 .where(RemotePC.server_id == server_id, RemotePC.worker_id.is_(None))
+                .order_by(RemotePC.idx.asc())
                 .limit(1)
             )
-            row_to_update = blank_remote_row.scalar_one_or_none()
+            row_to_update = blank_remote_row.scalars().first()
             
             if row_to_update:
                 await db.execute(
@@ -108,8 +158,8 @@ class remoteDao:
             select(RemotePC.service)
             .filter(RemotePC.server_id == server_id)
         )
-        return result.scalar_one_or_none()
-
+        return result.scalars().first()
+    
     @staticmethod
     async def find_remote_pc_list(db: AsyncSession):
         # 비동기 데이터 조회
@@ -181,7 +231,7 @@ class remoteWorkerPCDao:
         return result.scalars().first()
     
     @staticmethod
-    async def find_worker_serive_by_worker_id(db: AsyncSession, worker_id: str):
+    async def find_worker_service_by_worker_id(db: AsyncSession, worker_id: str):
         # 비동기 데이터 조회
         result = await db.execute(
             select(WorkerPC.service).filter(WorkerPC.worker_id == worker_id)

@@ -34,8 +34,12 @@ async def ten_min(info: dict):
                 raise FileNotFoundError("템플릿 이미지 로드 중 오류 발생")
             
             # 원격 데스크탑 활성화
-            await remote_focus(db, pc_num, deanak_id, worker_id)
-            state.ten_min_loop = True
+            isActive = await remote_focus(db, pc_num, deanak_id, worker_id)
+            if isActive:
+                state.ten_min_loop = True
+            if isActive is False:
+                await exit_main_loop(service)
+
             while state.ten_min_loop:
                 try:
                     # 화면 캡처 수행
@@ -58,7 +62,7 @@ async def ten_min(info: dict):
 
                     if detection_states['team_select_passed'] is True:
                         state.ten_min_loop = False
-                    asyncio.sleep(2)  # 일정 시간 대기
+                    await asyncio.sleep(2)  # 일정 시간 대기
 
                 except Exception as e:
                     handle_error(e, "메인 함수의 루프문 내부에서 예상치 못한 오류 발생", True)
@@ -74,4 +78,4 @@ async def ten_min(info: dict):
         await serviceQueueDao.error_update(db, deanak_id, worker_id, type(e).__name__)
         await exit_main_loop(service)
     finally:
-        await remoteDao.update_remote_pc_state_by_worker_id(db, worker_id, 'idle')
+        await remoteDao.update_remote_pc_process_by_worker_id(db, worker_id, 'idle')

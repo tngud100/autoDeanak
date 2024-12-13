@@ -7,7 +7,7 @@ from src.service.logic.utils.keyboard_mouse import exit_main_loop
 
 async def main_detection(db, detection_states, detection_count, screen, ratio_width, ratio_height, templates, deanak_id, worker_id, service):
   # 메인 화면 탐지 및 처리
-  if not detection_states["main_screen_passed"] and detection_states["team_select_passed"]:
+  if not detection_states["main_screen_passed"] and detection_states["purchase_before_main_screen_passed"]:
     try:
       detection_count["main_screen"] += 1
       if detection_count["main_screen"] > 20:
@@ -29,7 +29,7 @@ async def main_detection(db, detection_states, detection_count, screen, ratio_wi
         detection_count["market_btn"] += 1
         if detection_count["market_btn"] > 20:
           raise NoDetectionError("이적 시장 버튼이 20회 이상 탐지되지 않았습니다.")
-        if detect_and_click_template(screen, templates["market_btn"], 0.8, ratio_width, ratio_height, "marketBtn"):
+        if detect_and_click_template(screen, templates["market_btn"], 0.8, ratio_width, ratio_height):
           detection_states["main_screen_passed"] = True
           await serviceQueueDao.update_queue_process(db, deanak_id, worker_id, '이적시장')
           return detection_states, detection_count

@@ -16,7 +16,7 @@ async def get_item_detection(db, detection_states, detection_count, screen, rati
         detection_count["get_item_btn"] += 1
         if detection_count["get_item_btn"] > 20:
           raise NoDetectionError("아이템 획득 확인 버튼이 20회 이상 탐지되지 않았습니다.")
-        if detect_and_click_template(screen, templates["get_item_btn"], 0.8, ratio_width, ratio_height, "getItemBtn"):
+        if detect_and_click_template(screen, templates["get_item_btn"], 0.8, ratio_width, ratio_height):
           detection_states["get_item_screen_passed"] = True
           await serviceQueueDao.update_queue_process(db, deanak_id, worker_id, '판매 리스트')
           return detection_states, detection_count

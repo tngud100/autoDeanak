@@ -118,7 +118,6 @@ async def main(db: Session, info: dict):
                     print(f"{deanak_id}번의 자동대낙이 완료되었습니다.")
                     try:
                         await serviceQueueDao.update_queue_process(db, deanak_id, worker_id, '완료')
-                        await remoteDao.update_remote_pc_state_by_pc_num(db, pc_num, 'idle')
                         await serviceQueueDao.update_queue_state(db, deanak_id, worker_id, 1)
                         await serviceQueueDao.update_end_time(db, deanak_id, worker_id, time.strftime('%Y-%m-%d %H:%M:%S'))
                         await exit_main_loop()
@@ -128,7 +127,7 @@ async def main(db: Session, info: dict):
                         await serviceQueueDao.error_update(db, deanak_id, worker_id, type(e).__name__)
                         break
 
-                time.sleep(1)  # 일정 시간 대기
+                time.sleep(3)  # 일정 시간 대기
 
             except Exception as e:
                 handle_error(e, "메인 함수의 루프문 내부에서 예상치 못한 오류 발생", True)
@@ -144,5 +143,4 @@ async def main(db: Session, info: dict):
         await serviceQueueDao.error_update(db, deanak_id, worker_id, type(e).__name__)
         await exit_main_loop()
     finally:
-        # 최종적으로 비동기 작업을 모두 취소
-        await remoteDao.update_remote_pc_state_by_pc_num(db, pc_num, 'idle')
+        await remoteDao.update_remote_pc_process_by_worker_id(db, pc_num, 'idle')

@@ -16,9 +16,9 @@ async def password_detection(db, detection_states, detection_count, screen, scre
                     raise NoDetectionError("비밀번호 화면이 20회 이상 탐지되지 않았습니다.")
                 roi = (0, 0, screen_width, screen_height)
                 for idx, template in enumerate(templates["password_templates"]):
-                    detect_and_click_template(screen, template, 0.8, ratio_width, ratio_height, f"password_template_{idx + 1}", roi=roi)
-                
-                if handle_detection(screen, templates["password_confirm"], lambda: detect_and_click_template(screen, templates["password_confirm"], 0.8, ratio_width, ratio_height, "passwordConfirmBtn", roi=roi), roi=roi):
+                    detect_and_click_template(screen, template, 0.8, ratio_width, ratio_height, roi=roi)
+
+                if handle_detection(screen, templates["password_confirm"], lambda: detect_and_click_template(screen, templates["password_confirm"], 0.8, ratio_width, ratio_height, roi=roi), roi=roi):
                     screen = screen_capture()
                     if handle_detection(screen, templates["wrong_password"], lambda: None, roi=roi):
                         raise WrongPasswordError("비밀번호가 틀렸습니다.")
